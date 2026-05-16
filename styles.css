@@ -555,6 +555,17 @@ button {
   padding: 0;
 }
 
+.link-badge {
+  position: absolute;
+  left: 25px;
+  top: 42px;
+  z-index: 2;
+  color: #07111d;
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .cost-badge {
   top: -13px;
 }
@@ -564,6 +575,10 @@ button {
   width: 48px;
   height: 48px;
   font-size: 28px;
+}
+
+.card.linked-move .move-badge {
+  top: 66px;
 }
 
 .card-title {

@@ -42,6 +42,8 @@ const shapePatterns = {
   row: [3, 4, 5],
   lineH: [3, 4, 5],
   x: [0, 2, 4, 6, 8],
+  diagonal3: [0, 4, 8],
+  block6: [0, 1, 3, 4, 6, 7],
 };
 
 const cardBases = [
@@ -80,6 +82,39 @@ const cardBases = [
     shape: "row",
     desc: "造成30點傷害，30點破韌。攻擊角色目前橫排整排。",
     getCells: (pos) => Array.from({ length: COLS }, (_, c) => [pos.r, c]),
+  },
+  {
+    id: "kuangfengzhouyu",
+    name: "狂風快劍：狂風驟雨",
+    cost: 1,
+    damage: 10,
+    guardDamage: 10,
+    shape: "diagonal3",
+    linkedMove: true,
+    desc: "造成10點傷害，10點破韌。攻擊前方斜排三格，施展時同步移動。",
+    getCells: (pos) => [
+      [pos.r - 1, pos.c + 3],
+      [pos.r, pos.c + 4],
+      [pos.r + 1, pos.c + 5],
+    ],
+  },
+  {
+    id: "fengjuanyuncan",
+    name: "狂風快劍：風捲雲殘",
+    cost: 2,
+    damage: 5,
+    guardDamage: 15,
+    shape: "block6",
+    linkedMove: true,
+    desc: "造成5點傷害，15點破韌。攻擊前方三列兩欄共六格，施展時同步移動。",
+    getCells: (pos) => [
+      [pos.r - 1, pos.c + 3],
+      [pos.r - 1, pos.c + 4],
+      [pos.r, pos.c + 3],
+      [pos.r, pos.c + 4],
+      [pos.r + 1, pos.c + 3],
+      [pos.r + 1, pos.c + 4],
+    ],
   },
 ];
 
@@ -372,6 +407,9 @@ function playCard(card) {
   } else {
     log(`${card.name} 揮空，劍氣掠過棋盤。`);
   }
+  if (card.linkedMove) {
+    applyLinkedMove(card);
+  }
   state.selectedCardId = null;
   checkResult();
   render();
@@ -381,6 +419,13 @@ function playCard(card) {
     addSlash(cells);
     if (hitEnemy) animateUnit("enemy", "damaged");
   });
+}
+
+function applyLinkedMove(card) {
+  const next = nextPosition(state.player, card.moveDir);
+  if (next && !sameCell(next, state.enemy)) {
+    state.player = next;
+  }
 }
 
 function removeFromHand(uid) {
@@ -638,7 +683,13 @@ function renderBoard() {
   const selected = getSelectedCard();
   const selectedPreview = selected ? getCardCells(selected) : [];
   const attackPreview = state.dragPreview.mode === "attack" ? state.dragPreview.cells : selectedPreview;
-  const movePreview = state.dragPreview.mode === "move" ? state.dragPreview.cells : [];
+  const draggingCard = state.drag ? state.hand.find((item) => item.uid === state.drag.cardId) : null;
+  const movePreview =
+    state.dragPreview.mode === "move"
+      ? state.dragPreview.cells
+      : state.dragPreview.mode === "attack" && draggingCard?.linkedMove
+        ? getMoveCells(draggingCard)
+        : [];
   const previewSet = new Set(attackPreview.map(([r, c]) => `${r},${c}`));
   const movePreviewSet = new Set(movePreview.map(([r, c]) => `${r},${c}`));
   const attackSet = new Set(state.enemyAttack.map(([r, c]) => `${r},${c}`));
@@ -700,6 +751,7 @@ function renderHand() {
       "card",
       state.selectedCardId === card.uid ? "selected" : "",
       state.energy < card.cost ? "unaffordable" : "",
+      card.linkedMove ? "linked-move" : "",
       state.drag?.cardId === card.uid ? "dragging" : "",
     ].join(" ");
     node.setAttribute("role", "button");
@@ -708,6 +760,7 @@ function renderHand() {
     node.setAttribute("draggable", "true");
     node.innerHTML = `
       <div class="cost-badge">${card.cost}</div>
+      ${card.linkedMove ? '<div class="link-badge">=</div>' : ""}
       <div class="move-badge" title="拖到玩家半場時向${dirText(card.moveDir)}移動">${moveGlyphs[card.moveDir]}</div>
       <span class="card-title">${card.name}</span>
       <div class="card-art"></div>
