@@ -758,7 +758,11 @@ function addSlash(cells) {
 }
 
 function log(message) {
-  els.battleLog.textContent = message;
+  els.battleLog.innerHTML = `
+    <strong>"Space"：結束回合</strong>
+    <span>移動：拖曳卡牌到己方領地</span>
+    <span>施展卡牌：拖曳卡牌到敵人領地</span>
+  `;
 }
 
 document.addEventListener("keydown", (event) => {
