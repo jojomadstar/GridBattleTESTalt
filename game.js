@@ -2,7 +2,7 @@ const ROWS = 4;
 const COLS = 8;
 const PLAYER_MAX_HP = 500;
 const ENEMY_MAX_HP = 200;
-const ENEMY_MAX_GUARD = 200;
+const ENEMY_MAX_GUARD = 100;
 const MAX_HAND = 8;
 
 const els = {
@@ -18,6 +18,8 @@ const els = {
   turnText: document.getElementById("turnText"),
   energyText: document.getElementById("energyText"),
   moveText: document.getElementById("moveText"),
+  energyOrbText: document.getElementById("energyOrbText"),
+  moveOrbText: document.getElementById("moveOrbText"),
   battleLog: document.getElementById("battleLog"),
   restartBtn: document.getElementById("restartBtn"),
   redrawBtn: document.getElementById("redrawBtn"),
@@ -352,14 +354,20 @@ function playCard(card) {
   const hitEnemy = cells.some(([r, c]) => r === state.enemy.r && c === state.enemy.c);
   removeFromHand(card.uid);
   if (hitEnemy) {
-    state.enemyHp = Math.max(0, state.enemyHp - card.damage);
+    const damageMultiplier = state.stunnedThisTurn ? 2 : 1;
+    const actualDamage = card.damage * damageMultiplier;
+    state.enemyHp = Math.max(0, state.enemyHp - actualDamage);
     state.enemyGuard = Math.max(0, state.enemyGuard - card.guardDamage);
     if (state.enemyGuard === 0) {
       state.stunnedThisTurn = true;
       state.enemyAttack = [];
       log(`${card.name} 命中！敵人堅韌被擊破，本回合昏厥，預告攻擊取消。`);
     } else {
-      log(`${card.name} 命中！造成 ${card.damage} 傷害與 ${card.guardDamage} 破韌。`);
+      log(
+        damageMultiplier > 1
+          ? `${card.name} 命中昏厥目標！造成 ${actualDamage} 傷害與 ${card.guardDamage} 破韌。`
+          : `${card.name} 命中！造成 ${actualDamage} 傷害與 ${card.guardDamage} 破韌。`,
+      );
     }
   } else {
     log(`${card.name} 揮空，劍氣掠過棋盤。`);
@@ -622,6 +630,8 @@ function renderHud() {
   els.turnText.textContent = state.turn;
   els.energyText.textContent = state.energy;
   els.moveText.textContent = state.move;
+  els.energyOrbText.textContent = state.energy;
+  els.moveOrbText.textContent = state.move;
 }
 
 function renderBoard() {

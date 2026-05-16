@@ -403,6 +403,78 @@ button {
   margin-bottom: 4px;
 }
 
+.resource-orbs {
+  position: absolute;
+  left: 20px;
+  top: calc(100% + 16px);
+  width: 220px;
+  height: 250px;
+  z-index: 8;
+}
+
+.resource-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  width: 86px;
+  height: 86px;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  border-radius: 50%;
+  background: rgba(6, 18, 31, 0.86);
+  box-shadow:
+    inset 0 0 24px rgba(255, 255, 255, 0.08),
+    0 0 22px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(8px);
+}
+
+.resource-orb b {
+  display: block;
+  font-size: 36px;
+  line-height: 1;
+}
+
+.resource-orb span {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+  color: #dcecff;
+}
+
+.energy-orb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 150px;
+  height: 150px;
+  border-color: rgba(255, 96, 110, 0.98);
+  box-shadow:
+    inset 0 0 28px rgba(255, 96, 110, 0.18),
+    0 0 24px rgba(255, 96, 110, 0.26);
+}
+
+.energy-orb b {
+  color: #ff6675;
+  font-size: 56px;
+}
+
+.move-orb {
+  position: absolute;
+  left: 108px;
+  top: 140px;
+  width: 88px;
+  height: 88px;
+  border-color: rgba(255, 211, 108, 0.98);
+  box-shadow:
+    inset 0 0 22px rgba(255, 211, 108, 0.16),
+    0 0 18px rgba(255, 211, 108, 0.22);
+}
+
+.move-orb b {
+  color: var(--gold);
+  font-size: 32px;
+}
+
 .hand-zone {
   position: relative;
   z-index: 7;
