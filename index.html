@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>華山劍陣 Prototype</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <section class="top-hud">
+        <div class="fighter-panel player-panel">
+          <div class="name-row">
+            <span class="name">華山弟子</span>
+            <span id="playerHpText">500 / 500</span>
+          </div>
+          <div class="bar hp-bar"><span id="playerHpBar"></span></div>
+        </div>
+
+        <div class="round-panel">
+          <span>回合</span>
+          <strong id="turnText">1</strong>
+          <div class="resource-row">
+            <div><b id="energyText">3</b><span>體力</span></div>
+            <div><b id="moveText">1</b><span>移動</span></div>
+          </div>
+        </div>
+
+        <div class="fighter-panel enemy-panel">
+          <div class="name-row">
+            <span class="name">演武敵手</span>
+            <span id="enemyHpText">200 / 200</span>
+          </div>
+          <div class="bar hp-bar enemy"><span id="enemyHpBar"></span></div>
+          <div class="name-row guard-row">
+            <span>堅韌</span>
+            <span id="enemyGuardText">200 / 200</span>
+          </div>
+          <div class="bar guard-bar"><span id="enemyGuardBar"></span></div>
+        </div>
+      </section>
+
+      <section class="arena-wrap">
+        <div class="backdrop">
+          <div class="mountain m1"></div>
+          <div class="mountain m2"></div>
+          <div class="mountain m3"></div>
+          <div class="cloud c1"></div>
+          <div class="cloud c2"></div>
+        </div>
+        <div id="board" class="board" aria-label="4 by 8 battle grid"></div>
+        <div id="unitLayer" class="unit-layer" aria-hidden="true"></div>
+        <div id="battleLog" class="battle-log">敵人正在觀察你的步法。</div>
+      </section>
+
+      <section class="hand-zone">
+        <div id="hand" class="hand"></div>
+      </section>
+
+      <div class="test-buttons">
+        <button id="restartBtn" type="button">Restart</button>
+        <button id="redrawBtn" type="button">Redraw</button>
+      </div>
+
+      <div id="resultOverlay" class="result-overlay hidden">
+        <div>
+          <h1 id="resultTitle">勝利</h1>
+          <button id="overlayRestartBtn" type="button">再戰一局</button>
+        </div>
+      </div>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>
