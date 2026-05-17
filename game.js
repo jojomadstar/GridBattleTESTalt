@@ -4,6 +4,13 @@ const PLAYER_MAX_HP = 500;
 const ENEMY_MAX_HP = 200;
 const ENEMY_MAX_GUARD = 100;
 const MAX_HAND = 8;
+const DRAW_INTERVAL = 6000;
+const ENEMY_INTERVAL = 2500;
+const BOOST_COST = 3;
+const TOUCH_TAP_DISTANCE = 10;
+const TOUCH_DOUBLE_TAP_DELAY = 320;
+const TOUCH_GESTURE_THRESHOLD = 18;
+const TOUCH_DISCARD_DISTANCE = 64;
 
 const els = {
   board: document.getElementById("board"),
@@ -15,12 +22,17 @@ const els = {
   enemyHpBar: document.getElementById("enemyHpBar"),
   enemyGuardText: document.getElementById("enemyGuardText"),
   enemyGuardBar: document.getElementById("enemyGuardBar"),
-  turnText: document.getElementById("turnText"),
-  energyText: document.getElementById("energyText"),
-  moveText: document.getElementById("moveText"),
-  energyOrbText: document.getElementById("energyOrbText"),
-  moveOrbText: document.getElementById("moveOrbText"),
+  moveStepsText: document.getElementById("moveStepsText"),
+  woundOrbText: document.getElementById("woundOrbText"),
+  swiftOrbText: document.getElementById("swiftOrbText"),
+  woundOrb: document.getElementById("woundOrb"),
+  swiftOrb: document.getElementById("swiftOrb"),
+  woundOrbHitbox: document.getElementById("woundOrbHitbox"),
+  swiftOrbHitbox: document.getElementById("swiftOrbHitbox"),
+  drawProgressBar: document.getElementById("drawProgressBar"),
+  drawCountdownText: document.getElementById("drawCountdownText"),
   battleLog: document.getElementById("battleLog"),
+  teleportHint: document.getElementById("teleportHint"),
   restartBtn: document.getElementById("restartBtn"),
   redrawBtn: document.getElementById("redrawBtn"),
   overlay: document.getElementById("resultOverlay"),
@@ -28,20 +40,11 @@ const els = {
   overlayRestartBtn: document.getElementById("overlayRestartBtn"),
 };
 
-const moveGlyphs = {
-  up: "↑",
-  down: "↓",
-  left: "←",
-  right: "→",
-};
-
+const moveGlyphs = { up: "↑", down: "↓", left: "←", right: "→" };
 const shapePatterns = {
   line2H: [3, 4],
-  lineV: [1, 4, 7],
   cross: [1, 3, 4, 5, 7],
   row: [3, 4, 5],
-  lineH: [3, 4, 5],
-  x: [0, 2, 4, 6, 8],
   diagonal3: [0, 4, 8],
   block6: [0, 1, 3, 4, 6, 7],
 };
@@ -49,22 +52,22 @@ const shapePatterns = {
 const cardBases = [
   {
     id: "cangsong",
+    school: "wound",
     name: "華山劍法：蒼松迎客",
-    cost: 1,
     damage: 20,
     guardDamage: 10,
     shape: "line2H",
-    desc: "造成20點傷害，10點破韌。攻擊前方第四、第五格。",
+    rangeDesc: "攻擊前方第四、第五格。",
     getCells: (pos) => [[pos.r, pos.c + 4], [pos.r, pos.c + 5]],
   },
   {
     id: "youfeng",
+    school: "wound",
     name: "華山劍法：有鳳來儀",
-    cost: 2,
     damage: 10,
     guardDamage: 20,
     shape: "cross",
-    desc: "造成10點傷害，20點破韌。攻擊前方三至五格與第四格上下。",
+    rangeDesc: "攻擊前方三至五格與第四格上下。",
     getCells: (pos) => [
       [pos.r, pos.c + 3],
       [pos.r, pos.c + 4],
@@ -75,38 +78,34 @@ const cardBases = [
   },
   {
     id: "baihong",
+    school: "wound",
     name: "華山劍法：白虹貫日",
-    cost: 3,
     damage: 30,
     guardDamage: 30,
     shape: "row",
-    desc: "造成30點傷害，30點破韌。攻擊角色目前橫排整排。",
+    rangeDesc: "攻擊角色目前橫排整排。",
     getCells: (pos) => Array.from({ length: COLS }, (_, c) => [pos.r, c]),
   },
   {
     id: "kuangfengzhouyu",
+    school: "swift",
     name: "狂風快劍：狂風驟雨",
-    cost: 1,
     damage: 10,
     guardDamage: 10,
     shape: "diagonal3",
     linkedMove: true,
-    desc: "造成10點傷害，10點破韌。攻擊前方斜排三格，施展時同步移動。",
-    getCells: (pos) => [
-      [pos.r - 1, pos.c + 3],
-      [pos.r, pos.c + 4],
-      [pos.r + 1, pos.c + 5],
-    ],
+    rangeDesc: "攻擊前方斜排三格，施展時同步移動。",
+    getCells: (pos) => [[pos.r - 1, pos.c + 3], [pos.r, pos.c + 4], [pos.r + 1, pos.c + 5]],
   },
   {
     id: "fengjuanyuncan",
+    school: "swift",
     name: "狂風快劍：風捲雲殘",
-    cost: 2,
     damage: 5,
     guardDamage: 15,
     shape: "block6",
     linkedMove: true,
-    desc: "造成5點傷害，15點破韌。攻擊前方三列兩欄共六格，施展時同步移動。",
+    rangeDesc: "攻擊前方三列兩欄共六格，施展時同步移動。",
     getCells: (pos) => [
       [pos.r - 1, pos.c + 3],
       [pos.r - 1, pos.c + 4],
@@ -119,9 +118,10 @@ const cardBases = [
 ];
 
 const state = {
-  turn: 1,
-  energy: 3,
-  move: 1,
+  wound: 0,
+  swift: 0,
+  moveSteps: 0,
+  armedBoost: null,
   playerHp: PLAYER_MAX_HP,
   enemyHp: ENEMY_MAX_HP,
   enemyGuard: ENEMY_MAX_GUARD,
@@ -131,23 +131,39 @@ const state = {
   discard: [],
   hand: [],
   enemyAttack: [],
-  selectedCardId: null,
   drag: null,
   dragPreview: { mode: null, cells: [] },
-  stunnedThisTurn: false,
+  enemyStunned: false,
+  teleportTargeting: false,
+  drawElapsed: 0,
+  enemyElapsed: 0,
+  lastFrameAt: 0,
   gameOver: false,
-  firstTurn: true,
 };
 
+let lastTouchTap = null;
+let pendingTouchCard = null;
+let boardSwipe = null;
+
 function makeDeck() {
-  const dirs = ["up", "down", "left", "right"];
   return cardBases.flatMap((base) =>
-    dirs.map((dir) => ({
-      ...base,
-      uid: `${base.id}-${dir}-${crypto.randomUUID()}`,
-      moveDir: dir,
-    })),
+    Array.from({ length: 4 }, () => makeCard(base)),
   );
+}
+
+function makeCard(base) {
+  const moveValue = randomInt(1, 3);
+  const mobilityScale = { 1: 0.5, 2: 0.75, 3: 1 }[moveValue];
+  const damage = Math.round(base.damage * mobilityScale);
+  const guardDamage = Math.round(base.guardDamage * mobilityScale);
+  return {
+    ...base,
+    uid: `${base.id}-${crypto.randomUUID()}`,
+    moveValue,
+    damage,
+    guardDamage,
+    desc: `造成${damage}點傷害，${guardDamage}點破韌。${base.rangeDesc}`,
+  };
 }
 
 function shuffle(cards) {
@@ -167,11 +183,23 @@ function sameCell(a, b) {
   return a.r === b.r && a.c === b.c;
 }
 
+function uniqueCells(cells) {
+  const seen = new Set();
+  return cells.filter(([r, c]) => {
+    if (!inBounds(r, c)) return false;
+    const key = `${r},${c}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function resetGame() {
   Object.assign(state, {
-    turn: 1,
-    energy: 3,
-    move: 1,
+    wound: 0,
+    swift: 0,
+    moveSteps: 0,
+    armedBoost: null,
     playerHp: PLAYER_MAX_HP,
     enemyHp: ENEMY_MAX_HP,
     enemyGuard: ENEMY_MAX_GUARD,
@@ -181,166 +209,25 @@ function resetGame() {
     discard: [],
     hand: [],
     enemyAttack: [],
-    selectedCardId: null,
     drag: null,
     dragPreview: { mode: null, cells: [] },
-    stunnedThisTurn: false,
+    enemyStunned: false,
+    teleportTargeting: false,
+    drawElapsed: 0,
+    enemyElapsed: 0,
+    lastFrameAt: performance.now(),
     gameOver: false,
-    firstTurn: true,
   });
   els.overlay.classList.add("hidden");
-  startTurn(true);
-}
-
-function startTurn(isOpening = false) {
-  if (state.gameOver) return;
-  state.energy = 3;
-  state.move = 1;
-  state.stunnedThisTurn = false;
-  state.selectedCardId = null;
-  state.drag = null;
-  state.dragPreview = { mode: null, cells: [] };
-  moveEnemyRandomly(3);
+  drawCards(5);
+  moveEnemyRandomly(randomInt(1, 3));
   state.enemyAttack = makeEnemyAttack();
-  drawCards(isOpening ? 5 : 2);
-  state.firstTurn = false;
-  log(isOpening ? "起手抽五張。敵人已預告攻擊範圍。" : "新回合開始：敵人移動並標示攻擊範圍，你抽兩張牌。");
+  setLog("敵人已預告下一次攻擊。");
   render();
 }
 
-function moveEnemyRandomly(steps) {
-  for (let i = 0; i < steps; i += 1) {
-    const options = [
-      { r: state.enemy.r - 1, c: state.enemy.c },
-      { r: state.enemy.r + 1, c: state.enemy.c },
-      { r: state.enemy.r, c: state.enemy.c - 1 },
-      { r: state.enemy.r, c: state.enemy.c + 1 },
-    ].filter((p) => inBounds(p.r, p.c) && p.c >= 4 && !sameCell(p, state.player));
-    if (options.length) {
-      state.enemy = options[Math.floor(Math.random() * options.length)];
-    }
-  }
-}
-
-function makeEnemyAttack() {
-  const player = state.player;
-  const escapeCells = [
-    [player.r, player.c],
-    [player.r - 1, player.c],
-    [player.r + 1, player.c],
-    [player.r, player.c - 1],
-    [player.r, player.c + 1],
-  ].filter(([r, c]) => inBounds(r, c) && c < 4);
-
-  const plans = [
-    makePlayerAimedPlan(player),
-    makeMobilityTrapPlan(player),
-    makeEscapeCutoffPlan(escapeCells),
-  ].filter(Boolean);
-
-  const weightedPlans = [plans[0], plans[0], plans[1], plans[2]].filter(Boolean);
-  const chosen = weightedPlans[Math.floor(Math.random() * weightedPlans.length)];
-  return uniqueCells(chosen.filter(([r, c]) => inBounds(r, c) && c < 4));
-}
-
-function makePlayerAimedPlan(player) {
-  const type = ["horizontal", "vertical", "cross", "x"][Math.floor(Math.random() * 4)];
-  const cells = [];
-  if (type === "horizontal") {
-    for (let c = 0; c < 4; c += 1) cells.push([player.r, c]);
-    cells.push([player.r - 1, player.c], [player.r + 1, player.c]);
-  }
-  if (type === "vertical") {
-    for (let r = 0; r < ROWS; r += 1) cells.push([r, player.c]);
-    cells.push([player.r, player.c - 1], [player.r, player.c + 1]);
-  }
-  if (type === "cross") {
-    cells.push(
-      [player.r, player.c],
-      [player.r - 1, player.c],
-      [player.r + 1, player.c],
-      [player.r, player.c - 1],
-      [player.r, player.c + 1],
-      [player.r - 2, player.c],
-      [player.r + 2, player.c],
-      [player.r, player.c - 2],
-      [player.r, player.c + 2],
-    );
-  }
-  if (type === "x") {
-    cells.push(
-      [player.r, player.c],
-      [player.r - 1, player.c - 1],
-      [player.r - 1, player.c + 1],
-      [player.r + 1, player.c - 1],
-      [player.r + 1, player.c + 1],
-      [player.r - 2, player.c - 2],
-      [player.r - 2, player.c + 2],
-      [player.r + 2, player.c - 2],
-      [player.r + 2, player.c + 2],
-    );
-  }
-  return uniqueCells(cells);
-}
-
-function makeMobilityTrapPlan(player) {
-  const cells = [];
-  const horizontalRoom = player.c > 0 && player.c < 3;
-  if (horizontalRoom && Math.random() < 0.55) {
-    cells.push(
-      [player.r, player.c - 1],
-      [player.r, player.c],
-      [player.r, player.c + 1],
-      [player.r - 1, player.c],
-      [player.r + 1, player.c],
-    );
-  } else {
-    cells.push(
-      [player.r - 1, player.c],
-      [player.r, player.c],
-      [player.r + 1, player.c],
-      [player.r, player.c - 1],
-      [player.r, player.c + 1],
-    );
-  }
-  return uniqueCells(cells);
-}
-
-function makeEscapeCutoffPlan(escapeCells) {
-  if (!escapeCells.length) return null;
-  const scoredRows = Array.from({ length: ROWS }, (_, r) => ({
-    r,
-    score: escapeCells.filter(([er]) => er === r).length,
-  })).sort((a, b) => b.score - a.score);
-  const scoredCols = Array.from({ length: 4 }, (_, c) => ({
-    c,
-    score: escapeCells.filter(([, ec]) => ec === c).length,
-  })).sort((a, b) => b.score - a.score);
-
-  if (scoredRows[0].score >= scoredCols[0].score) {
-    const row = scoredRows[0].r;
-    return [
-      ...Array.from({ length: 4 }, (_, c) => [row, c]),
-      ...Array.from({ length: 4 }, (_, c) => [row - 1, c]),
-      ...Array.from({ length: 4 }, (_, c) => [row + 1, c]),
-    ];
-  }
-  const col = scoredCols[0].c;
-  return [
-    ...Array.from({ length: ROWS }, (_, r) => [r, col]),
-    ...Array.from({ length: ROWS }, (_, r) => [r, col - 1]),
-    ...Array.from({ length: ROWS }, (_, r) => [r, col + 1]),
-  ];
-}
-
-function uniqueCells(cells) {
-  const seen = new Set();
-  return cells.filter(([r, c]) => {
-    const key = `${r},${c}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function randomInt(min, max) {
+  return min + Math.floor(Math.random() * (max - min + 1));
 }
 
 function drawCards(count) {
@@ -359,73 +246,193 @@ function redrawHand() {
   state.discard.push(...state.hand);
   state.hand = [];
   drawCards(5);
-  state.selectedCardId = null;
-  log("測試重抽：棄掉目前手牌並抽五張。");
   render();
 }
 
-function getSelectedCard() {
-  return state.hand.find((card) => card.uid === state.selectedCardId);
+function gameLoop(now) {
+  const delta = Math.min(100, now - state.lastFrameAt);
+  state.lastFrameAt = now;
+  if (!state.gameOver) {
+    state.drawElapsed += delta;
+    state.enemyElapsed += delta;
+    if (state.drawElapsed >= DRAW_INTERVAL) {
+      state.drawElapsed %= DRAW_INTERVAL;
+      if (state.drag) {
+        state.drawElapsed = DRAW_INTERVAL - 1;
+      } else {
+        drawCards(2);
+        renderHand();
+      }
+    }
+    if (state.enemyElapsed >= ENEMY_INTERVAL) {
+      state.enemyElapsed %= ENEMY_INTERVAL;
+      resolveEnemyAction();
+    }
+    renderTimeline();
+    renderEnemyActionBar();
+  }
+  requestAnimationFrame(gameLoop);
 }
 
-function getCardCells(card) {
-  return uniqueCells(card.getCells(state.player).filter(([r, c]) => inBounds(r, c)));
+function moveEnemyRandomly(steps) {
+  for (let i = 0; i < steps; i += 1) {
+    const options = [
+      { r: state.enemy.r - 1, c: state.enemy.c },
+      { r: state.enemy.r + 1, c: state.enemy.c },
+      { r: state.enemy.r, c: state.enemy.c - 1 },
+      { r: state.enemy.r, c: state.enemy.c + 1 },
+    ].filter((p) => inBounds(p.r, p.c) && p.c >= 4);
+    if (options.length) state.enemy = options[Math.floor(Math.random() * options.length)];
+  }
 }
 
-function getMoveCells(card) {
-  const next = nextPosition(state.player, card.moveDir);
-  return next && !sameCell(next, state.enemy) ? [[next.r, next.c]] : [];
+function resolveEnemyAction() {
+  let playerWasHit = false;
+  if (!state.enemyStunned && state.enemyAttack.some(([r, c]) => r === state.player.r && c === state.player.c)) {
+    state.playerHp = Math.max(0, state.playerHp - 40);
+    playerWasHit = true;
+  }
+  state.enemyStunned = false;
+  state.enemyGuard = ENEMY_MAX_GUARD;
+  moveEnemyRandomly(randomInt(1, 3));
+  state.enemyAttack = makeEnemyAttack();
+  checkResult();
+  render();
+  if (playerWasHit) {
+    requestAnimationFrame(() => {
+      flashCells([[state.player.r, state.player.c]]);
+      animateUnit("player", "damaged");
+      showDamageNumber(40, false, "player");
+    });
+  }
+}
+
+function makeEnemyAttack() {
+  const player = state.player;
+  const escapeCells = [
+    [player.r, player.c],
+    [player.r - 1, player.c],
+    [player.r + 1, player.c],
+    [player.r, player.c - 1],
+    [player.r, player.c + 1],
+  ].filter(([r, c]) => inBounds(r, c) && c < 4);
+  const plans = [makePlayerAimedPlan(player), makeMobilityTrapPlan(player), makeEscapeCutoffPlan(escapeCells)];
+  return uniqueCells(plans[Math.floor(Math.random() * plans.length)].filter(([, c]) => c < 4));
+}
+
+function makePlayerAimedPlan(player) {
+  const type = ["horizontal", "vertical", "cross", "x"][Math.floor(Math.random() * 4)];
+  if (type === "horizontal") return [[player.r - 1, player.c], ...Array.from({ length: 4 }, (_, c) => [player.r, c]), [player.r + 1, player.c]];
+  if (type === "vertical") return [[player.r, player.c - 1], ...Array.from({ length: ROWS }, (_, r) => [r, player.c]), [player.r, player.c + 1]];
+  if (type === "cross") {
+    return [
+      [player.r, player.c],
+      [player.r - 1, player.c],
+      [player.r + 1, player.c],
+      [player.r, player.c - 1],
+      [player.r, player.c + 1],
+      [player.r - 2, player.c],
+      [player.r + 2, player.c],
+    ];
+  }
+  return [
+    [player.r, player.c],
+    [player.r - 1, player.c - 1],
+    [player.r - 1, player.c + 1],
+    [player.r + 1, player.c - 1],
+    [player.r + 1, player.c + 1],
+  ];
+}
+
+function makeMobilityTrapPlan(player) {
+  return [
+    [player.r, player.c],
+    [player.r - 1, player.c],
+    [player.r + 1, player.c],
+    [player.r, player.c - 1],
+    [player.r, player.c + 1],
+  ];
+}
+
+function makeEscapeCutoffPlan(escapeCells) {
+  const bestRow = Array.from({ length: ROWS }, (_, r) => ({
+    r,
+    score: escapeCells.filter(([er]) => er === r).length,
+  })).sort((a, b) => b.score - a.score)[0].r;
+  return [
+    ...Array.from({ length: 4 }, (_, c) => [bestRow, c]),
+    ...Array.from({ length: 4 }, (_, c) => [bestRow - 1, c]),
+  ];
+}
+
+function getBaseCardCells(card) {
+  return uniqueCells(card.getCells(state.player));
+}
+
+function getCardCells(card, boost = null) {
+  const base = getBaseCardCells(card);
+  if (!boost) return base;
+  if (card.shape === "row") {
+    return uniqueCells([state.player.r - 1, state.player.r, state.player.r + 1].flatMap((r) => Array.from({ length: COLS }, (_, c) => [r, c])));
+  }
+  return uniqueCells(base.flatMap(([r, c]) => [[r, c], [r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]]));
+}
+
+function nextPosition(pos, dir) {
+  const delta = { up: [-1, 0], down: [1, 0], left: [0, -1], right: [0, 1] }[dir];
+  const next = { r: pos.r + delta[0], c: pos.c + delta[1] };
+  return inBounds(next.r, next.c) && next.c < 4 ? next : null;
 }
 
 function playCard(card) {
-  if (state.gameOver) return;
-  if (state.energy < card.cost) {
-    log("體力不足，這張牌目前無法施展。");
-    render();
-    return;
-  }
-  state.energy -= card.cost;
-  const cells = getCardCells(card);
+  if (state.gameOver || state.teleportTargeting) return;
+  const boost = state.armedBoost;
+  const cells = getCardCells(card, boost);
   const hitEnemy = cells.some(([r, c]) => r === state.enemy.r && c === state.enemy.c);
+  const multiplier = boost === "wound" ? 2 : boost === "swift" ? 1.5 : 1;
+  const stunMultiplier = state.enemyStunned ? 2 : 1;
+  const actualDamage = Math.round(card.damage * multiplier * stunMultiplier);
+  const actualGuard = Math.round(card.guardDamage * multiplier);
   removeFromHand(card.uid);
+  state[card.school] += 1;
   if (hitEnemy) {
-    const damageMultiplier = state.stunnedThisTurn ? 2 : 1;
-    const actualDamage = card.damage * damageMultiplier;
     state.enemyHp = Math.max(0, state.enemyHp - actualDamage);
-    state.enemyGuard = Math.max(0, state.enemyGuard - card.guardDamage);
+    state.enemyGuard = Math.max(0, state.enemyGuard - actualGuard);
     if (state.enemyGuard === 0) {
-      state.stunnedThisTurn = true;
+      state.enemyStunned = true;
       state.enemyAttack = [];
-      log(`${card.name} 命中！敵人堅韌被擊破，本回合昏厥，預告攻擊取消。`);
-    } else {
-      log(
-        damageMultiplier > 1
-          ? `${card.name} 命中昏厥目標！造成 ${actualDamage} 傷害與 ${card.guardDamage} 破韌。`
-          : `${card.name} 命中！造成 ${actualDamage} 傷害與 ${card.guardDamage} 破韌。`,
-      );
     }
-  } else {
-    log(`${card.name} 揮空，劍氣掠過棋盤。`);
   }
-  if (card.linkedMove) {
-    applyLinkedMove(card);
+  const boostedSwiftOnWound = boost === "swift" && card.school === "wound";
+  if (card.linkedMove || boostedSwiftOnWound) gainLinkedMove(card);
+  if (boost === "swift" && card.school === "swift") {
+    state.teleportTargeting = true;
+    setLog("點選格子進行跳躍");
   }
-  state.selectedCardId = null;
+  state.armedBoost = null;
   checkResult();
   render();
-  window.requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
     flashCells(cells);
-    animateUnit("player", "attacking");
     addSlash(cells);
-    if (hitEnemy) animateUnit("enemy", "damaged");
+    animateUnit("player", "attacking");
+    if (hitEnemy) {
+      animateUnit("enemy", "damaged");
+      showDamageNumber(actualDamage, Boolean(boost));
+    }
   });
 }
 
-function applyLinkedMove(card) {
-  const next = nextPosition(state.player, card.moveDir);
-  if (next && !sameCell(next, state.enemy)) {
-    state.player = next;
-  }
+function gainLinkedMove(card) {
+  state.moveSteps += card.moveValue;
+  setLog(`獲得 ${card.moveValue} 點移動步數，目前 ${state.moveSteps} 點。`);
+}
+
+function sacrificeCardForMove(card) {
+  state.moveSteps += card.moveValue;
+  removeFromHand(card.uid);
+  setLog(`犧牲卡牌，獲得 ${card.moveValue} 點移動步數，目前 ${state.moveSteps} 點。`);
+  render();
 }
 
 function removeFromHand(uid) {
@@ -436,57 +443,72 @@ function removeFromHand(uid) {
   }
 }
 
-function discardCard(uid) {
-  if (state.gameOver) return;
-  const card = state.hand.find((item) => item.uid === uid);
-  removeFromHand(uid);
-  if (state.selectedCardId === uid) state.selectedCardId = null;
-  log(`棄掉 ${card.name}。`);
-  render();
-}
-
-function useCardAsMove(card) {
-  if (state.gameOver) return;
-  const next = nextPosition(state.player, card.moveDir);
-  if (!next || sameCell(next, state.enemy)) {
-    log("這張移動牌的方向被擋住了。");
-    render();
+function armBoost(type) {
+  if (state[type] < BOOST_COST) {
+    setLog(`${type === "wound" ? "傷" : "訊"}能量不足，需累積 3 點。`);
+    pulseOrb(type, "denied");
     return;
   }
-  state.player = next;
-  removeFromHand(card.uid);
-  state.selectedCardId = null;
-  log(`以卡牌身法向${dirText(card.moveDir)}移動一格。`);
-  render();
+  if (state.armedBoost === type) return;
+  state[type] -= BOOST_COST;
+  state.armedBoost = type;
+  setLog(type === "wound" ? "傷能量已啟動：下一張卡牌會被強化。" : "訊能量已啟動：下一張卡牌會被強化。");
+  renderHud();
+  renderHand();
+  pulseOrb(type, "activate");
 }
 
+function pulseOrb(type, className) {
+  const orb = type === "wound" ? els.woundOrb : els.swiftOrb;
+  orb.classList.remove(className);
+  void orb.offsetWidth;
+  orb.classList.add(className);
+  setTimeout(() => orb.classList.remove(className), 420);
+}
+
+
 function startCardDrag(event, card) {
-  if (state.gameOver || event.button !== 0 || state.drag) return;
+  if (state.gameOver || state.teleportTargeting || event.button !== 0 || state.drag) return;
+  if (event.pointerType === "touch") {
+    pendingTouchCard = {
+      cardId: card.uid,
+      pointerId: event.pointerId,
+      node: event.currentTarget,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+    return;
+  }
+  beginCardDrag(event, card);
+}
+
+function beginCardDrag(event, card, start = null, nodeOverride = null) {
+  if (state.gameOver || state.teleportTargeting || state.drag) return;
   event.preventDefault();
-  const node = event.currentTarget;
+  const node = nodeOverride ?? event.currentTarget;
   const rect = node.getBoundingClientRect();
   const pointerId = event.pointerId ?? "mouse";
   state.drag = {
     cardId: card.uid,
     pointerId,
+    pointerType: event.pointerType ?? "mouse",
     node,
     offsetX: event.clientX - rect.left,
     offsetY: event.clientY - rect.top,
+    startX: start?.startX ?? event.clientX,
+    startY: start?.startY ?? event.clientY,
+    moved: false,
   };
-  state.selectedCardId = null;
   if (event.pointerId !== undefined && node.setPointerCapture) {
     node.setPointerCapture(event.pointerId);
   }
   node.classList.add("dragging");
   node.style.width = `${rect.width}px`;
-  node.style.left = `${event.clientX - state.drag.offsetX}px`;
-  node.style.top = `${event.clientY - state.drag.offsetY}px`;
-  updateDragPreview(event.clientX, event.clientY);
-  renderBoard();
+  moveCardDrag(event);
 }
 
 function startNativeCardDrag(event, card) {
-  if (state.gameOver) {
+  if (state.gameOver || state.teleportTargeting) {
     event.preventDefault();
     return;
   }
@@ -499,57 +521,78 @@ function startNativeCardDrag(event, card) {
       offsetY: 0,
     };
   }
-  event.currentTarget.classList.add("dragging");
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", card.uid);
-  updateDragPreview(event.clientX, event.clientY);
-  renderBoard();
+  event.currentTarget.classList.add("dragging");
 }
 
 function moveCardDrag(event) {
   const pointerId = event.pointerId ?? "mouse";
+  if (pendingTouchCard && pendingTouchCard.pointerId === pointerId) {
+    const dx = event.clientX - pendingTouchCard.startX;
+    const dy = event.clientY - pendingTouchCard.startY;
+    if (Math.abs(dx) < TOUCH_GESTURE_THRESHOLD && Math.abs(dy) < TOUCH_GESTURE_THRESHOLD) return;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      pendingTouchCard = null;
+      return;
+    }
+    const card = state.hand.find((item) => item.uid === pendingTouchCard.cardId);
+    if (!card) {
+      pendingTouchCard = null;
+      return;
+    }
+    const start = pendingTouchCard;
+    pendingTouchCard = null;
+    beginCardDrag(event, card, start, start.node);
+  }
   if (!state.drag || state.drag.pointerId !== pointerId) return;
-  const node = state.drag.node;
-  node.style.left = `${event.clientX - state.drag.offsetX}px`;
-  node.style.top = `${event.clientY - state.drag.offsetY}px`;
+  if (Math.hypot(event.clientX - state.drag.startX, event.clientY - state.drag.startY) > TOUCH_TAP_DISTANCE) {
+    state.drag.moved = true;
+  }
+  state.drag.node.style.left = `${event.clientX - state.drag.offsetX}px`;
+  state.drag.node.style.top = `${event.clientY - state.drag.offsetY}px`;
   updateDragPreview(event.clientX, event.clientY);
   renderBoard();
 }
 
 function endCardDrag(event) {
   const pointerId = event.pointerId ?? "mouse";
+  if (pendingTouchCard && pendingTouchCard.pointerId === pointerId) {
+    const card = state.hand.find((item) => item.uid === pendingTouchCard.cardId);
+    pendingTouchCard = null;
+    if (card) registerTouchTap(card);
+    return;
+  }
   if (!state.drag || state.drag.pointerId !== pointerId) return;
-  const card = state.hand.find((item) => item.uid === state.drag.cardId);
-  const mode = getDropMode(event.clientX, event.clientY);
+  const drag = state.drag;
+  const card = state.hand.find((item) => item.uid === drag.cardId);
+  const mode = getDropMode(event.clientX, event.clientY, drag);
   state.drag = null;
   state.dragPreview = { mode: null, cells: [] };
-  if (card && mode === "attack") {
-    playCard(card);
-    return;
-  }
-  if (card && mode === "move") {
-    useCardAsMove(card);
-    return;
-  }
-  render();
+  if (card && drag.pointerType === "touch" && mode === "cancel" && !drag.moved) {
+    registerTouchTap(card);
+    render();
+  } else if (card && mode === "discard") sacrificeCardForMove(card);
+  else if (card && mode === "cast") playCard(card);
+  else render();
 }
 
-function endNativeCardDrag(event) {
+function registerTouchTap(card) {
+  const now = performance.now();
+  if (lastTouchTap && lastTouchTap.cardId === card.uid && now - lastTouchTap.at <= TOUCH_DOUBLE_TAP_DELAY) {
+    lastTouchTap = null;
+    sacrificeCardForMove(card);
+    return;
+  }
+  lastTouchTap = { cardId: card.uid, at: now };
+}
+
+function cancelCardDrag() {
+  pendingTouchCard = null;
+  boardSwipe = null;
   if (!state.drag) return;
-  event.preventDefault();
-  const card = state.hand.find((item) => item.uid === state.drag.cardId);
-  const mode = getDropMode(event.clientX, event.clientY);
   state.drag = null;
   state.dragPreview = { mode: null, cells: [] };
-  if (card && mode === "attack") {
-    playCard(card);
-    return;
-  }
-  if (card && mode === "move") {
-    useCardAsMove(card);
-    return;
-  }
-  log("取消使用卡牌。");
   render();
 }
 
@@ -560,102 +603,29 @@ function updateNativeDragPreview(event) {
   renderBoard();
 }
 
-function cancelCardDrag(message = "取消使用卡牌。") {
-  if (!state.drag) return false;
+function endNativeCardDrag(event) {
+  if (!state.drag) return;
+  event.preventDefault();
+  const card = state.hand.find((item) => item.uid === state.drag.cardId);
+  const mode = getDropMode(event.clientX, event.clientY);
   state.drag = null;
   state.dragPreview = { mode: null, cells: [] };
-  log(message);
-  render();
-  return true;
+  if (card && mode === "cast") playCard(card);
+  else render();
 }
 
-function getDropMode(clientX, clientY) {
+function getDropMode(clientX, clientY, drag = null) {
   const handRect = els.hand.getBoundingClientRect();
-  if (
-    clientX >= handRect.left &&
-    clientX <= handRect.right &&
-    clientY >= handRect.top &&
-    clientY <= handRect.bottom
-  ) {
-    return "cancel";
-  }
-  const boardRect = els.board.getBoundingClientRect();
-  const midpoint = boardRect.left + boardRect.width / 2;
-  return clientX >= midpoint ? "attack" : "move";
+  if (drag?.pointerType === "touch" && clientY - drag.startY >= TOUCH_DISCARD_DISTANCE) return "discard";
+  if (clientX >= handRect.left && clientX <= handRect.right && clientY >= handRect.top && clientY <= handRect.bottom) return "cancel";
+  return "cast";
 }
 
 function updateDragPreview(clientX, clientY) {
   const card = state.drag ? state.hand.find((item) => item.uid === state.drag.cardId) : null;
-  if (!card) {
-    state.dragPreview = { mode: null, cells: [] };
-    return;
-  }
-  const mode = getDropMode(clientX, clientY);
-  state.dragPreview = {
-    mode,
-    cells: mode === "attack" ? getCardCells(card) : mode === "move" ? getMoveCells(card) : [],
-  };
-}
-
-function dirText(dir) {
-  return { up: "上", down: "下", left: "左", right: "右" }[dir];
-}
-
-function nextPosition(pos, dir) {
-  const delta = {
-    up: [-1, 0],
-    down: [1, 0],
-    left: [0, -1],
-    right: [0, 1],
-  }[dir];
-  const next = { r: pos.r + delta[0], c: pos.c + delta[1] };
-  return inBounds(next.r, next.c) && next.c < 4 ? next : null;
-}
-
-function freeMove(dir) {
-  if (state.gameOver || state.move <= 0) return;
-  cancelCardDrag("移動時取消卡牌拖曳。");
-  const next = nextPosition(state.player, dir);
-  if (!next) return;
-  state.player = next;
-  state.move -= 1;
-  log(`移動到新的格位。`);
-  render();
-}
-
-function endTurn() {
-  if (state.gameOver) return;
-  cancelCardDrag("結束回合，取消卡牌拖曳。");
-  if (!state.stunnedThisTurn && state.enemyAttack.some(([r, c]) => r === state.player.r && c === state.player.c)) {
-    state.playerHp = Math.max(0, state.playerHp - 40);
-    animateUnit("player", "damaged");
-    flashCells([[state.player.r, state.player.c]]);
-    log("敵方攻擊命中，你受到40點傷害。");
-  } else if (state.stunnedThisTurn) {
-    log("敵人昏厥，回合結束時無法攻擊。");
-  } else {
-    log("你避開了敵方預告攻擊。");
-  }
-  checkResult();
-  if (!state.gameOver) {
-    state.turn += 1;
-    state.enemyGuard = ENEMY_MAX_GUARD;
-    window.setTimeout(() => startTurn(false), 460);
-  }
-  render();
-}
-
-function checkResult() {
-  if (state.enemyHp <= 0) {
-    state.gameOver = true;
-    els.resultTitle.textContent = "勝利";
-    els.overlay.classList.remove("hidden");
-  }
-  if (state.playerHp <= 0) {
-    state.gameOver = true;
-    els.resultTitle.textContent = "戰敗";
-    els.overlay.classList.remove("hidden");
-  }
+  if (!card) return;
+  const mode = getDropMode(clientX, clientY, state.drag);
+  state.dragPreview = { mode, cells: mode === "cast" ? getCardCells(card, state.armedBoost) : [] };
 }
 
 function render() {
@@ -672,27 +642,27 @@ function renderHud() {
   els.enemyHpBar.style.width = `${(state.enemyHp / ENEMY_MAX_HP) * 100}%`;
   els.enemyGuardText.textContent = `${state.enemyGuard} / ${ENEMY_MAX_GUARD}`;
   els.enemyGuardBar.style.width = `${(state.enemyGuard / ENEMY_MAX_GUARD) * 100}%`;
-  els.turnText.textContent = state.turn;
-  els.energyText.textContent = state.energy;
-  els.moveText.textContent = state.move;
-  els.energyOrbText.textContent = state.energy;
-  els.moveOrbText.textContent = state.move;
+  els.moveStepsText.textContent = state.moveSteps;
+  els.woundOrbText.textContent = state.wound;
+  els.swiftOrbText.textContent = state.swift;
+  els.woundOrb.classList.toggle("ready", state.wound >= BOOST_COST);
+  els.swiftOrb.classList.toggle("ready", state.swift >= BOOST_COST);
+  els.woundOrb.classList.toggle("armed", state.armedBoost === "wound");
+  els.swiftOrb.classList.toggle("armed", state.armedBoost === "swift");
+}
+
+function renderTimeline() {
+  const ratio = state.drawElapsed / DRAW_INTERVAL;
+  els.drawProgressBar.style.width = `${ratio * 100}%`;
+  els.drawCountdownText.textContent = `${((DRAW_INTERVAL - state.drawElapsed) / 1000).toFixed(1)}s`;
 }
 
 function renderBoard() {
-  const selected = getSelectedCard();
-  const selectedPreview = selected ? getCardCells(selected) : [];
-  const attackPreview = state.dragPreview.mode === "attack" ? state.dragPreview.cells : selectedPreview;
-  const draggingCard = state.drag ? state.hand.find((item) => item.uid === state.drag.cardId) : null;
-  const movePreview =
-    state.dragPreview.mode === "move"
-      ? state.dragPreview.cells
-      : state.dragPreview.mode === "attack" && draggingCard?.linkedMove
-        ? getMoveCells(draggingCard)
-        : [];
-  const previewSet = new Set(attackPreview.map(([r, c]) => `${r},${c}`));
-  const movePreviewSet = new Set(movePreview.map(([r, c]) => `${r},${c}`));
+  const attackPreview = state.dragPreview.mode === "cast" ? state.dragPreview.cells : [];
+  const movePreview = [];
   const attackSet = new Set(state.enemyAttack.map(([r, c]) => `${r},${c}`));
+  const previewSet = new Set(attackPreview.map(([r, c]) => `${r},${c}`));
+  const moveSet = new Set(movePreview.map(([r, c]) => `${r},${c}`));
   els.board.innerHTML = "";
   for (let r = 0; r < ROWS; r += 1) {
     for (let c = 0; c < COLS; c += 1) {
@@ -701,15 +671,40 @@ function renderBoard() {
       cell.dataset.cell = `${r},${c}`;
       if (attackSet.has(`${r},${c}`)) cell.classList.add("attack-preview");
       if (previewSet.has(`${r},${c}`)) cell.classList.add("card-preview");
-      if (movePreviewSet.has(`${r},${c}`)) cell.classList.add("move-preview");
+      if (moveSet.has(`${r},${c}`)) cell.classList.add("move-preview");
+      if (state.teleportTargeting && c < 4) cell.classList.add("teleport-target");
+      cell.addEventListener("click", () => handleCellClick(r, c));
       els.board.appendChild(cell);
     }
   }
+  els.board.addEventListener("pointerdown", startBoardSwipe);
   requestAnimationFrame(renderUnits);
 }
 
+function handleCellClick(r, c) {
+  if (!state.teleportTargeting || c >= 4) return;
+  state.player = { r, c };
+  state.teleportTargeting = false;
+  setLog("已瞬移。");
+  render();
+}
+
+function startBoardSwipe(event) {
+  if (event.pointerType !== "touch" || state.drag || pendingTouchCard || state.teleportTargeting) return;
+  boardSwipe = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY };
+}
+
+function endBoardSwipe(event) {
+  if (!boardSwipe || boardSwipe.pointerId !== event.pointerId || state.drag || state.teleportTargeting) return;
+  const dx = event.clientX - boardSwipe.startX;
+  const dy = event.clientY - boardSwipe.startY;
+  boardSwipe = null;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < TOUCH_GESTURE_THRESHOLD) return;
+  const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
+  movePlayer(dir);
+}
+
 function renderUnits() {
-  if (!els.unitLayer) return;
   els.unitLayer.innerHTML = "";
   placeUnit("player", state.player);
   placeUnit("enemy", state.enemy);
@@ -733,12 +728,11 @@ function makeUnit(type) {
   const base = document.createElement("span");
   base.className = "base";
   unit.appendChild(base);
-  if (type === "enemy" && state.stunnedThisTurn) {
-    unit.classList.add("stunned");
-    const mark = document.createElement("span");
-    mark.className = "stun-mark";
-    mark.textContent = "昏";
-    unit.appendChild(mark);
+  if (type === "enemy") {
+    const actionBar = document.createElement("span");
+    actionBar.className = "enemy-action-bar";
+    actionBar.innerHTML = "<i></i>";
+    unit.appendChild(actionBar);
   }
   return unit;
 }
@@ -747,57 +741,58 @@ function renderHand() {
   els.hand.innerHTML = "";
   state.hand.forEach((card) => {
     const node = document.createElement("article");
-    node.className = [
-      "card",
-      state.selectedCardId === card.uid ? "selected" : "",
-      state.energy < card.cost ? "unaffordable" : "",
-      card.linkedMove ? "linked-move" : "",
-      state.drag?.cardId === card.uid ? "dragging" : "",
-    ].join(" ");
-    node.setAttribute("role", "button");
-    node.setAttribute("tabindex", "0");
-    node.setAttribute("aria-label", `${card.name}，拖到右半場施展，拖到左半場移動`);
+    node.className = `card ${card.school}-card ${card.linkedMove ? "linked-move" : ""} ${state.armedBoost ? "boost-ready" : ""}`;
     node.setAttribute("draggable", "true");
     node.innerHTML = `
-      <div class="cost-badge">${card.cost}</div>
+      <div class="school-badge">${card.school === "wound" ? "傷" : "訊"}</div>
+      <div class="move-badge">${card.moveValue}</div>
       ${card.linkedMove ? '<div class="link-badge">=</div>' : ""}
-      <div class="move-badge" title="拖到玩家半場時向${dirText(card.moveDir)}移動">${moveGlyphs[card.moveDir]}</div>
       <span class="card-title">${card.name}</span>
       <div class="card-art"></div>
-      <div class="card-desc">
-        ${card.desc}
-        ${shapeIcon(card.shape)}
-      </div>
+      <div class="card-desc">${card.desc}${shapeIcon(card.shape)}</div>
     `;
     node.addEventListener("pointerdown", (event) => startCardDrag(event, card));
     node.addEventListener("pointermove", moveCardDrag);
     node.addEventListener("pointerup", endCardDrag);
-    node.addEventListener("pointercancel", endCardDrag);
+    node.addEventListener("pointercancel", cancelCardDrag);
     node.addEventListener("mousedown", (event) => startCardDrag(event, card));
     node.addEventListener("dragstart", (event) => startNativeCardDrag(event, card));
-    node.addEventListener("dragend", () => cancelCardDrag("取消使用卡牌。"));
+    node.addEventListener("dragend", cancelCardDrag);
     node.addEventListener("contextmenu", (event) => {
       event.preventDefault();
-      discardCard(card.uid);
+      sacrificeCardForMove(card);
+    });
+    node.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      sacrificeCardForMove(card);
     });
     els.hand.appendChild(node);
   });
 }
 
 function shapeIcon(shape) {
-  const on = new Set(shapePatterns[shape] || shapePatterns.cross);
-  const cells = Array.from({ length: 9 }, (_, i) => `<i class="${on.has(i) ? "on" : ""}"></i>`).join("");
-  return `<span class="shape-icon" aria-label="${shape}">${cells}</span>`;
+  const on = new Set(shapePatterns[shape]);
+  return `<span class="shape-icon">${Array.from({ length: 9 }, (_, i) => `<i class="${on.has(i) ? "on" : ""}"></i>`).join("")}</span>`;
 }
 
 function flashCells(cells) {
   cells.forEach(([r, c]) => {
     const cell = els.board.querySelector(`[data-cell="${r},${c}"]`);
-    if (cell) {
-      cell.classList.remove("hit-flash");
-      void cell.offsetWidth;
-      cell.classList.add("hit-flash");
-    }
+    if (!cell) return;
+    cell.classList.remove("hit-flash");
+    void cell.offsetWidth;
+    cell.classList.add("hit-flash");
+  });
+}
+
+function addSlash(cells) {
+  cells.forEach(([r, c]) => {
+    const cell = els.board.querySelector(`[data-cell="${r},${c}"]`);
+    if (!cell) return;
+    const slash = document.createElement("div");
+    slash.className = "slash-effect";
+    cell.appendChild(slash);
+    setTimeout(() => slash.remove(), 460);
   });
 }
 
@@ -809,45 +804,75 @@ function animateUnit(type, className) {
   unit.classList.add(className);
 }
 
-function addSlash(cells) {
-  cells.forEach(([r, c]) => {
-    const cell = els.board.querySelector(`[data-cell="${r},${c}"]`);
-    if (!cell) return;
-    const slash = document.createElement("div");
-    slash.className = "slash-effect";
-    cell.appendChild(slash);
-    window.setTimeout(() => slash.remove(), 460);
-  });
+function showDamageNumber(amount, boosted, target = "enemy") {
+  const unit = els.unitLayer.querySelector(`[data-unit="${target}"]`);
+  if (!unit) return;
+  const text = document.createElement("span");
+  text.className = `damage-number ${boosted ? "boosted" : ""}`;
+  text.textContent = amount;
+  text.style.left = unit.style.left;
+  text.style.top = unit.style.top;
+  els.unitLayer.appendChild(text);
+  setTimeout(() => text.remove(), 1100);
 }
 
-function log(message) {
-  els.battleLog.innerHTML = `
-    <strong>"Space"：結束回合</strong>
-    <span>移動：拖曳卡牌到己方領地</span>
-    <span>施展卡牌：拖曳卡牌到敵人領地</span>
-  `;
+function setLog(message) {
+  els.teleportHint.textContent = message || "";
 }
 
-document.addEventListener("keydown", (event) => {
-  const keyMap = { w: "up", a: "left", s: "down", d: "right" };
-  const key = event.key.toLowerCase();
-  if (keyMap[key]) {
-    event.preventDefault();
-    freeMove(keyMap[key]);
+function renderEnemyActionBar() {
+  const fill = els.unitLayer.querySelector(".enemy .enemy-action-bar i");
+  if (!fill) return;
+  fill.style.width = `${Math.min(1, state.enemyElapsed / ENEMY_INTERVAL) * 100}%`;
+}
+
+function movePlayer(dir) {
+  if (state.moveSteps <= 0 || state.teleportTargeting) return;
+  const next = nextPosition(state.player, dir);
+  if (!next) return;
+  state.player = next;
+  state.moveSteps -= 1;
+  render();
+}
+
+function checkResult() {
+  if (state.enemyHp <= 0) {
+    state.gameOver = true;
+    els.resultTitle.textContent = "勝利";
+    els.overlay.classList.remove("hidden");
+  } else if (state.playerHp <= 0) {
+    state.gameOver = true;
+    els.resultTitle.textContent = "戰敗";
+    els.overlay.classList.remove("hidden");
   }
-  if (event.code === "Space") {
-    event.preventDefault();
-    endTurn();
-  }
-});
+}
+
+document.addEventListener("pointermove", moveCardDrag);
+document.addEventListener("pointerup", endCardDrag);
+document.addEventListener("pointercancel", cancelCardDrag);
+document.addEventListener("pointerup", endBoardSwipe);
 document.addEventListener("mousemove", moveCardDrag);
 document.addEventListener("mouseup", endCardDrag);
 document.addEventListener("dragover", updateNativeDragPreview);
 document.addEventListener("drop", endNativeCardDrag);
+window.addEventListener("blur", cancelCardDrag);
 window.addEventListener("resize", () => requestAnimationFrame(renderUnits));
+function bindOrbHitbox(hitbox, orb, type) {
+  hitbox.addEventListener("mouseenter", () => orb.classList.add("hovered"));
+  hitbox.addEventListener("mouseleave", () => orb.classList.remove("hovered"));
+  hitbox.addEventListener("click", () => armBoost(type));
+}
 
+bindOrbHitbox(els.woundOrbHitbox, els.woundOrb, "wound");
+bindOrbHitbox(els.swiftOrbHitbox, els.swiftOrb, "swift");
+document.addEventListener("keydown", (event) => {
+  const dir = { w: "up", a: "left", s: "down", d: "right" }[event.key.toLowerCase()];
+  if (!dir) return;
+  movePlayer(dir);
+});
 els.restartBtn.addEventListener("click", resetGame);
 els.overlayRestartBtn.addEventListener("click", resetGame);
 els.redrawBtn.addEventListener("click", redrawHand);
 
 resetGame();
+requestAnimationFrame(gameLoop);

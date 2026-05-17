@@ -18,11 +18,11 @@
         </div>
 
         <div class="round-panel">
-          <span>回合</span>
-          <strong id="turnText">1</strong>
-          <div class="resource-row">
-            <div><b id="energyText">3</b><span>體力</span></div>
-            <div><b id="moveText">1</b><span>移動</span></div>
+          <span>移動點數</span>
+          <strong id="paceText">半即時</strong>
+          <div class="move-counter">
+            <b id="moveStepsText">0</b>
+            <span>目前可移動步數</span>
           </div>
         </div>
 
@@ -34,7 +34,7 @@
           <div class="bar hp-bar enemy"><span id="enemyHpBar"></span></div>
           <div class="name-row guard-row">
             <span>堅韌</span>
-            <span id="enemyGuardText">200 / 200</span>
+            <span id="enemyGuardText">100 / 100</span>
           </div>
           <div class="bar guard-bar"><span id="enemyGuardBar"></span></div>
         </div>
@@ -51,20 +51,32 @@
         <div id="board" class="board" aria-label="4 by 8 battle grid"></div>
         <div id="unitLayer" class="unit-layer" aria-hidden="true"></div>
         <div id="battleLog" class="battle-log">
-          <strong>"Space"：結束回合</strong>
-          <span>移動：拖曳卡牌到己方領地</span>
-          <span>施展卡牌：拖曳卡牌到敵人領地</span>
+          <strong>拖曳卡牌到棋盤施展</strong>
+          <span>右鍵或雙擊卡牌兌換移動步數</span>
+          <span id="teleportHint"></span>
         </div>
-        <div class="resource-orbs" aria-label="玩家資源">
-          <div class="resource-orb energy-orb">
-            <b id="energyOrbText">3</b>
-            <span>體力</span>
-          </div>
-          <div class="resource-orb move-orb">
-            <b id="moveOrbText">1</b>
-            <span>移動</span>
-          </div>
+      </section>
+
+      <div class="resource-orbs" aria-label="玩家資源">
+        <div id="woundOrb" class="resource-orb wound-orb">
+          <b id="woundOrbText">0</b>
+          <span>傷</span>
         </div>
+        <div id="swiftOrb" class="resource-orb swift-orb">
+          <b id="swiftOrbText">0</b>
+          <span>訊</span>
+        </div>
+      </div>
+
+      <div class="resource-orb-hitboxes" aria-hidden="true">
+        <button id="woundOrbHitbox" class="resource-orb-hitbox wound-hitbox" type="button" tabindex="-1"></button>
+        <button id="swiftOrbHitbox" class="resource-orb-hitbox swift-hitbox" type="button" tabindex="-1"></button>
+      </div>
+
+      <section class="timeline-wrap" aria-label="抽牌進度">
+        <span>抽牌</span>
+        <div class="timeline-bar"><span id="drawProgressBar"></span></div>
+        <b id="drawCountdownText">5.0s</b>
       </section>
 
       <section class="hand-zone">
