@@ -377,18 +377,9 @@ button {
   animation: unitDamaged 330ms ease;
 }
 
-.unit.stunned::before {
-  box-shadow: 0 0 18px #ffd36c;
-}
-
-.unit.stunned .stun-mark {
-  position: absolute;
-  left: 7px;
-  top: -15px;
-  color: var(--gold);
-  font-size: 24px;
-  font-weight: 900;
-  animation: bob 680ms ease-in-out infinite alternate;
+.unit.enemy.staggered::before,
+.unit.enemy.staggered::after {
+  animation: enemyStaggerBlue 420ms ease-in-out infinite alternate;
 }
 
 .slash-effect {
@@ -415,7 +406,10 @@ button {
   background: rgba(4, 12, 22, 0.72);
   color: #dff9ff;
   font-size: 14px;
+  text-align: left;
   z-index: 4;
+  cursor: pointer;
+  transition: max-width 180ms ease, min-height 180ms ease, padding 180ms ease, background 180ms ease;
 }
 
 .battle-log strong,
@@ -425,6 +419,16 @@ button {
 
 .battle-log strong {
   margin-bottom: 4px;
+}
+
+.battle-log.collapsed {
+  max-width: 118px;
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+.battle-log.collapsed span:not(#teleportHint) {
+  display: none;
 }
 
 .resource-orbs {
@@ -826,6 +830,26 @@ button {
   text-shadow: 0 0 14px rgba(255, 211, 108, 0.85);
 }
 
+.damage-number.staggered-hit {
+  color: #ff4e6a;
+  font-size: 44px;
+  font-weight: 1000;
+  text-shadow:
+    0 0 12px rgba(255, 78, 106, 0.95),
+    0 0 24px rgba(255, 78, 106, 0.65);
+}
+
+.break-number {
+  position: absolute;
+  z-index: 21;
+  transform: translate(-50%, -185%);
+  color: #8bf3ff;
+  font-weight: 900;
+  font-size: 30px;
+  text-shadow: 0 0 14px rgba(139, 243, 255, 0.9);
+  animation: breakFloat 1100ms ease-out forwards;
+}
+
 @keyframes dangerPulse {
   from {
     background-color: rgba(255, 78, 106, 0.22);
@@ -902,6 +926,21 @@ button {
   12% { opacity: 1; }
   62% { opacity: 1; transform: translate(-50%, -250%); }
   100% { opacity: 0; transform: translate(-50%, -300%); }
+}
+
+@keyframes enemyStaggerBlue {
+  from { filter: brightness(1); }
+  to {
+    filter: brightness(1.75) hue-rotate(155deg);
+    box-shadow: 0 0 24px rgba(86, 255, 230, 0.9);
+  }
+}
+
+@keyframes breakFloat {
+  0% { opacity: 0; transform: translate(-50%, -150%) scale(0.82); }
+  12% { opacity: 1; }
+  62% { opacity: 1; transform: translate(-50%, -255%) scale(1.08); }
+  100% { opacity: 0; transform: translate(-50%, -320%) scale(1.12); }
 }
 
 @media (max-width: 860px) {
@@ -1103,6 +1142,12 @@ button {
     font-size: 12px;
   }
 
+  .battle-log.collapsed {
+    right: auto;
+    max-width: 92px;
+    padding: 8px 10px;
+  }
+
   .resource-orbs,
   .resource-orb-hitboxes {
     left: 10px;
@@ -1258,5 +1303,9 @@ button {
 
   .damage-number.boosted {
     font-size: 28px;
+  }
+
+  .damage-number.staggered-hit {
+    font-size: 34px;
   }
 }

@@ -50,11 +50,15 @@
         </div>
         <div id="board" class="board" aria-label="4 by 8 battle grid"></div>
         <div id="unitLayer" class="unit-layer" aria-hidden="true"></div>
-        <div id="battleLog" class="battle-log">
-          <strong>拖曳卡牌到棋盤施展</strong>
-          <span>右鍵或雙擊卡牌兌換移動步數</span>
+        <button id="battleLog" class="battle-log collapsed" type="button" aria-expanded="false">
+          <strong>操作說明</strong>
+          <span>移動：WSAD / 於棋盤上滑動，消耗移動點數。</span>
+          <span>移動點數可透過使用「訊」技能，或拋棄卡牌換取。</span>
+          <span>施展卡牌：向上拖拽卡牌到棋盤釋放。</span>
+          <span>拋棄卡牌：向下拖拽卡牌 / 右鍵，換取對應移動點數。</span>
+          <span>強化：施展對應卡牌換取能量點，點擊「攻」/「訊」球強化當前卡牌。</span>
           <span id="teleportHint"></span>
-        </div>
+        </button>
       </section>
 
       <div class="resource-orbs" aria-label="玩家資源">

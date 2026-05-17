@@ -7,6 +7,7 @@ const MAX_HAND = 8;
 const DRAW_INTERVAL = 6000;
 const ENEMY_INTERVAL = 2500;
 const BOOST_COST = 3;
+const STAGGER_DURATION = 6000;
 const TOUCH_TAP_DISTANCE = 10;
 const TOUCH_DOUBLE_TAP_DELAY = 320;
 const TOUCH_GESTURE_THRESHOLD = 18;
@@ -133,7 +134,9 @@ const state = {
   enemyAttack: [],
   drag: null,
   dragPreview: { mode: null, cells: [] },
-  enemyStunned: false,
+  enemyStaggerMs: 0,
+  restoreGuardOnNextAction: false,
+  resumeMovementAfterGuardRestore: false,
   teleportTargeting: false,
   drawElapsed: 0,
   enemyElapsed: 0,
@@ -211,7 +214,9 @@ function resetGame() {
     enemyAttack: [],
     drag: null,
     dragPreview: { mode: null, cells: [] },
-    enemyStunned: false,
+    enemyStaggerMs: 0,
+    restoreGuardOnNextAction: false,
+    resumeMovementAfterGuardRestore: false,
     teleportTargeting: false,
     drawElapsed: 0,
     enemyElapsed: 0,
@@ -255,6 +260,7 @@ function gameLoop(now) {
   if (!state.gameOver) {
     state.drawElapsed += delta;
     state.enemyElapsed += delta;
+    state.enemyStaggerMs = Math.max(0, state.enemyStaggerMs - delta);
     if (state.drawElapsed >= DRAW_INTERVAL) {
       state.drawElapsed %= DRAW_INTERVAL;
       if (state.drag) {
@@ -288,13 +294,30 @@ function moveEnemyRandomly(steps) {
 
 function resolveEnemyAction() {
   let playerWasHit = false;
-  if (!state.enemyStunned && state.enemyAttack.some(([r, c]) => r === state.player.r && c === state.player.c)) {
+  if (state.restoreGuardOnNextAction) {
+    state.enemyGuard = ENEMY_MAX_GUARD;
+    state.restoreGuardOnNextAction = false;
+    state.resumeMovementAfterGuardRestore = true;
+    state.enemyAttack = makeEnemyAttack();
+    checkResult();
+    render();
+    return;
+  }
+  if (isEnemyStaggered()) {
+    state.enemyAttack = [];
+    checkResult();
+    render();
+    return;
+  }
+  if (state.enemyAttack.some(([r, c]) => r === state.player.r && c === state.player.c)) {
     state.playerHp = Math.max(0, state.playerHp - 40);
     playerWasHit = true;
   }
-  state.enemyStunned = false;
-  state.enemyGuard = ENEMY_MAX_GUARD;
-  moveEnemyRandomly(randomInt(1, 3));
+  if (!state.resumeMovementAfterGuardRestore) {
+    moveEnemyRandomly(randomInt(1, 3));
+  } else {
+    state.resumeMovementAfterGuardRestore = false;
+  }
   state.enemyAttack = makeEnemyAttack();
   checkResult();
   render();
@@ -390,7 +413,8 @@ function playCard(card) {
   const cells = getCardCells(card, boost);
   const hitEnemy = cells.some(([r, c]) => r === state.enemy.r && c === state.enemy.c);
   const multiplier = boost === "wound" ? 2 : boost === "swift" ? 1.5 : 1;
-  const stunMultiplier = state.enemyStunned ? 2 : 1;
+  const staggeredHit = isEnemyStaggered();
+  const stunMultiplier = staggeredHit ? 2 : 1;
   const actualDamage = Math.round(card.damage * multiplier * stunMultiplier);
   const actualGuard = Math.round(card.guardDamage * multiplier);
   removeFromHand(card.uid);
@@ -399,7 +423,9 @@ function playCard(card) {
     state.enemyHp = Math.max(0, state.enemyHp - actualDamage);
     state.enemyGuard = Math.max(0, state.enemyGuard - actualGuard);
     if (state.enemyGuard === 0) {
-      state.enemyStunned = true;
+      state.enemyStaggerMs = STAGGER_DURATION;
+      state.restoreGuardOnNextAction = true;
+      state.resumeMovementAfterGuardRestore = false;
       state.enemyAttack = [];
     }
   }
@@ -418,9 +444,14 @@ function playCard(card) {
     animateUnit("player", "attacking");
     if (hitEnemy) {
       animateUnit("enemy", "damaged");
-      showDamageNumber(actualDamage, Boolean(boost));
+      showDamageNumber(actualDamage, Boolean(boost), "enemy", staggeredHit);
+      if (state.enemyGuard === 0) showBreakNumber();
     }
   });
+}
+
+function isEnemyStaggered() {
+  return state.enemyStaggerMs > 0;
 }
 
 function gainLinkedMove(card) {
@@ -616,8 +647,8 @@ function endNativeCardDrag(event) {
 
 function getDropMode(clientX, clientY, drag = null) {
   const handRect = els.hand.getBoundingClientRect();
-  if (drag?.pointerType === "touch" && clientY - drag.startY >= TOUCH_DISCARD_DISTANCE) return "discard";
   if (clientX >= handRect.left && clientX <= handRect.right && clientY >= handRect.top && clientY <= handRect.bottom) return "cancel";
+  if (drag && clientY - drag.startY >= TOUCH_DISCARD_DISTANCE) return "discard";
   return "cast";
 }
 
@@ -729,6 +760,7 @@ function makeUnit(type) {
   base.className = "base";
   unit.appendChild(base);
   if (type === "enemy") {
+    if (isEnemyStaggered()) unit.classList.add("staggered");
     const actionBar = document.createElement("span");
     actionBar.className = "enemy-action-bar";
     actionBar.innerHTML = "<i></i>";
@@ -804,12 +836,24 @@ function animateUnit(type, className) {
   unit.classList.add(className);
 }
 
-function showDamageNumber(amount, boosted, target = "enemy") {
+function showDamageNumber(amount, boosted, target = "enemy", staggered = false) {
   const unit = els.unitLayer.querySelector(`[data-unit="${target}"]`);
   if (!unit) return;
   const text = document.createElement("span");
-  text.className = `damage-number ${boosted ? "boosted" : ""}`;
+  text.className = `damage-number ${boosted ? "boosted" : ""} ${staggered ? "staggered-hit" : ""}`;
   text.textContent = amount;
+  text.style.left = unit.style.left;
+  text.style.top = unit.style.top;
+  els.unitLayer.appendChild(text);
+  setTimeout(() => text.remove(), 1100);
+}
+
+function showBreakNumber() {
+  const unit = els.unitLayer.querySelector('[data-unit="enemy"]');
+  if (!unit) return;
+  const text = document.createElement("span");
+  text.className = "break-number";
+  text.textContent = "破韌!";
   text.style.left = unit.style.left;
   text.style.top = unit.style.top;
   els.unitLayer.appendChild(text);
@@ -818,6 +862,11 @@ function showDamageNumber(amount, boosted, target = "enemy") {
 
 function setLog(message) {
   els.teleportHint.textContent = message || "";
+}
+
+function toggleBattleLog() {
+  const collapsed = els.battleLog.classList.toggle("collapsed");
+  els.battleLog.setAttribute("aria-expanded", String(!collapsed));
 }
 
 function renderEnemyActionBar() {
@@ -865,6 +914,7 @@ function bindOrbHitbox(hitbox, orb, type) {
 
 bindOrbHitbox(els.woundOrbHitbox, els.woundOrb, "wound");
 bindOrbHitbox(els.swiftOrbHitbox, els.swiftOrb, "swift");
+els.battleLog.addEventListener("click", toggleBattleLog);
 document.addEventListener("keydown", (event) => {
   const dir = { w: "up", a: "left", s: "down", d: "right" }[event.key.toLowerCase()];
   if (!dir) return;
